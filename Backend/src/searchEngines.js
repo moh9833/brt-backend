@@ -1,6 +1,7 @@
+// src/routes/search.js
 const express = require('express');
 const { findOfficialWebsite } = require('../officialWebsite');
-const { getMonthlyTraffic } = require('../similarweb');
+const { getMonthlyTraffic } = require('../similarweb'); // (rename किया हुआ स्मॉल 'similarweb' लोड करेगा)
 const { findAffiliateLink } = require('../affiliateSearch');
 const sheetsClient = require('../sheetsClient');
 
@@ -12,10 +13,12 @@ router.post('/search', async (req, res) => {
   const country = String(req.body?.country || '').trim();
   const email = String(req.body?.email || '').trim().toLowerCase();
 
+  // अगर यूजर ने ब्रांड का नाम नहीं डाला
   if (!brand) {
     return res.status(400).json({ ok: false, error: 'Brand name is required.' });
   }
 
+  // डिफ़ॉल्ट रिस्पॉन्स ऑब्जेक्ट
   const result = {
     brand,
     domain: 'Not Found',
@@ -25,33 +28,47 @@ router.post('/search', async (req, res) => {
   };
 
   try {
-    // 1. Official website
-    const { domain } = await findOfficialWebsite(brand, country || undefined);
+    console.log(`🚀 [Search Route] Research starting for: ${brand}`);
 
-    if (domain) {
-      result.domain = domain;
+    // 1. Official website ढूंढेंगे
+    const websiteData = await findOfficialWebsite(brand, country || undefined);
+
+    if (websiteData && websiteData.domain) {
+      result.domain = websiteData.domain;
       result.status = 'partial';
 
-      // 2. Similarweb traffic (never throws - "Unknown" on failure)
-      result.traffic = await getMonthlyTraffic(domain);
+      // 2. Similarweb से ट्रैफिक निकालेंगे (अगर एरर आए तो भी "Unknown" रहेगा, क्रैश नहीं होगा)
+      try {
+        result.traffic = await getMonthlyTraffic(result.domain);
+      } catch (trafficErr) {
+        console.error('⚠️ Traffic fetch failed:', trafficErr.message);
+        result.traffic = 'Unknown';
+      }
 
-      // 3. Affiliate link
-      const affiliateLink = await findAffiliateLink(brand, domain);
-      if (affiliateLink) {
-        result.affiliateLink = affiliateLink;
-        result.status = 'found';
+      // 3. Affiliate link ढूंढेंगे
+      try {
+        const affiliateLink = await findAffiliateLink(brand, result.domain);
+        if (affiliateLink) {
+          result.affiliateLink = affiliateLink;
+          result.status = 'found';
+        }
+      } catch (affErr) {
+        console.error('⚠️ Affiliate link search failed:', affErr.message);
+        result.affiliateLink = 'Not Found';
       }
     }
   } catch (err) {
-    // Never crash the request - fall through with whatever partial data we have.
-    console.error('[search] error while researching brand:', err.message);
+    // अगर कुछ भी फेल हो जाए, तो यूजर को क्रैश एरर नहीं दिखेगा, खाली डेटा चला जाएगा
+    console.error('❌ [search] Error while researching brand:', err.message);
   }
 
-  // Best-effort logging - a Sheets hiccup must never fail the user's search.
+  // Google Sheet में बैकग्राउंड में लॉग सेव करेंगे (सर्च फेल न हो, इसलिए इसे try/catch में रखा है)
   try {
     if (email) {
+      // यूजर की डिटेल शीट में अपडेट करेंगे
       await sheetsClient.upsertUser({ name: undefined, email, country, brand });
     }
+    // सर्च हिस्ट्री लॉग करेंगे
     await sheetsClient.logSearch({
       email: email || 'anonymous',
       brand,
@@ -61,10 +78,12 @@ router.post('/search', async (req, res) => {
       affiliateLink: result.affiliateLink,
       status: result.status,
     });
-  } catch (err) {
-    console.error('[search] logging to Sheets failed:', err.message);
+    console.log(`📝 [Search Route] Logged search for ${brand} to Google Sheets.`);
+  } catch (sheetErr) {
+    console.error('❌ [search] Logging to Sheets failed:', sheetErr.message);
   }
 
+  // फाइनल रिस्पॉन्स यूजर को भेजेंगे
   return res.json({ ok: true, result });
 });
 
