@@ -1,6 +1,7 @@
-const { searchWithFallback } = require('./searchEngines');
+// src/officialWebsite.js
+const { searchGoogleOnly } = require('./searchEngines');
 
-// Host fragments that disqualify a result from being "the official site"
+// जो वेबसाइट्स आधिकारिक (Official) नहीं होतीं, उनकी लिस्ट
 const REJECTED_HOST_FRAGMENTS = [
   'wikipedia.org',
   'facebook.com',
@@ -35,21 +36,7 @@ const REJECTED_HOST_FRAGMENTS = [
   'app.similarweb.com',
 ];
 
-// Path/title keywords that suggest "review", "coupon", "forum", "directory"
-const REJECTED_KEYWORDS = [
-  'review',
-  'coupon',
-  'promo code',
-  'discount code',
-  'forum',
-  'directory',
-  'vs ',
-  'alternatives',
-  'best ',
-  'top 10',
-  'top 20',
-];
-
+// डोमेन नेम साफ़ करने के लिए (उदा. https://www.nordvpn.com/ -> nordvpn.com)
 function normalizeDomain(rawUrl) {
   try {
     const u = new URL(rawUrl);
@@ -65,33 +52,27 @@ function isRejectedHost(host) {
   return REJECTED_HOST_FRAGMENTS.some((frag) => host.includes(frag));
 }
 
-function isRejectedByKeyword(title = '') {
-  const lower = title.toLowerCase();
-  return REJECTED_KEYWORDS.some((kw) => lower.includes(kw));
-}
-
 /**
- * @param {string} brandName
- * @param {string} [country]  optional country name, e.g. "Germany"
- * @returns {Promise<{domain: string|null, sourceUrl: string|null, engine: string|null}>}
+ * Brand के नाम से उसकी असली वेबसाइट ढूंढता है
  */
 async function findOfficialWebsite(brandName, country) {
   const query = country
     ? `${brandName} Official Website ${country}`
     : `${brandName} Official Website`;
 
-  const { results, engine } = await searchWithFallback(query);
+  // सिर्फ Google से रिजल्ट्स मंगाएंगे
+  const urls = await searchGoogleOnly(query);
 
-  for (const result of results) {
-    const host = normalizeDomain(result.url);
+  for (const url of urls) {
+    const host = normalizeDomain(url);
     if (!host) continue;
     if (isRejectedHost(host)) continue;
-    if (isRejectedByKeyword(result.title)) continue;
 
-    return { domain: host, sourceUrl: result.url, engine };
+    // पहली वैलिड वेबसाइट मिलते ही रिटर्न कर देंगे
+    return { domain: host, sourceUrl: url, engine: 'google' };
   }
 
-  return { domain: null, sourceUrl: null, engine };
+  return { domain: null, sourceUrl: null, engine: 'google' };
 }
 
 module.exports = { findOfficialWebsite, normalizeDomain, isRejectedHost };
