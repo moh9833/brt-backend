@@ -1,17 +1,3 @@
-/**
- * sheetsClient.js
- * -----------------------------------------------------------------------
- * The Node backend NEVER talks to Google Sheets directly and never holds
- * a service-account key. All reads/writes go through the Apps Script
- * Web App (see apps-script/Code.gs), which is the only piece of this
- * project allowed to touch the Sheet. Every call includes APP_SECRET so
- * the Apps Script endpoint can reject requests that don't come from this
- * backend.
- * -----------------------------------------------------------------------
- */
-
-const fetch = require('node-fetch');
-
 const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_URL;
 const APP_SECRET = process.env.APP_SECRET;
 
