@@ -1,14 +1,3 @@
-/**
- * officialWebsite.js
- * -----------------------------------------------------------------------
- * Given raw search results for "<Brand> Official Website [Country]",
- * picks the first URL that is NOT a social network, wiki, directory,
- * review/coupon site, blog, or forum - then normalizes it down to a
- * bare registrable domain (e.g. https://www.nordvpn.com/pricing ->
- * nordvpn.com).
- * -----------------------------------------------------------------------
- */
-
 const { searchWithFallback } = require('./searchEngines');
 
 // Host fragments that disqualify a result from being "the official site"
