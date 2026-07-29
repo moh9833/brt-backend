@@ -1,21 +1,37 @@
-// src/searchEngines.js (Google ONLY + Proxy Support)
+// src/searchEngines.js
 const { getBrowser } = require('./browser');
+
+// Proxy URL में से Username और Password अलग-अलग करने का हेल्पर
+function getProxyConfig() {
+  const rawUrl = process.env.PROXY_URL;
+  if (!rawUrl) return undefined;
+
+  try {
+    const u = new URL(rawUrl.startsWith('http') ? rawUrl : `http://${rawUrl}`);
+    const config = {
+      server: `${u.protocol}//${u.hostname}:${u.port || 80}`
+    };
+    if (u.username) config.username = decodeURIComponent(u.username);
+    if (u.password) config.password = decodeURIComponent(u.password);
+    return config;
+  } catch (_) {
+    return { server: rawUrl };
+  }
+}
 
 async function searchGoogleOnly(query) {
   const browser = await getBrowser();
-
-  // अगर Render में PROXY_URL सेट होगा तो यह उसे यूज़ करेगा
-  const proxyConfig = process.env.PROXY_URL ? { server: process.env.PROXY_URL } : undefined;
+  const proxyConfig = getProxyConfig();
 
   const contextOptions = {
     userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     locale: 'en-US'
   };
 
-  // अगर Proxy मौजूद है, तो Playwright को बताएँगे
+  // अगर प्रोक्सी है, तो उसे प्लेराइट के फॉर्मेट में सेट करेंगे
   if (proxyConfig) {
     contextOptions.proxy = proxyConfig;
-    console.log(`🌐 [Proxy Active] Routing Google Search through Proxy.`);
+    console.log(`🌐 [Proxy Connected]: ${proxyConfig.server}`);
   }
 
   const context = await browser.newContext(contextOptions);
@@ -23,22 +39,11 @@ async function searchGoogleOnly(query) {
 
   try {
     const url = `https://www.google.com/search?q=${encodeURIComponent(query)}&hl=en`;
-    console.log(`🔍 [Google Only] Searching for: ${query}`);
+    console.log(`🔍 [Google Search] Searching for: ${query}`);
 
-    // गूगल पर जाएँगे
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
+    // टाइमआउट 10 सेकंड रखा है ताकि जल्दी रिस्पॉन्स मिले
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 10000 });
 
-    // अगर गूगल ने Consent/Cookie फॉर्म दिखाया, तो "Accept All" बटन दबाने की कोशिश करेंगे
-    try {
-      const acceptBtn = await page.$('button:has-text("Accept all"), button:has-text("I agree"), #L2AGLb');
-      if (acceptBtn) {
-        console.log('🍪 [Google] Consent button found, clicking Accept...');
-        await acceptBtn.click();
-        await page.waitForTimeout(1500); // 1.5 सेकंड रुकेंगे
-      }
-    } catch (_) {}
-
-    // गूगल रिजल्ट्स में से ऑर्गेनिक लिंक्स निकालेंगे
     const links = await page.evaluate(() => {
       const searchContainer = document.querySelector('#search, #rso');
       if (!searchContainer) return [];
@@ -48,30 +53,18 @@ async function searchGoogleOnly(query) {
 
       anchors.forEach(a => {
         const href = a.href;
-        if (!href) return;
-
-        try {
-          const urlObj = new URL(href);
-          if (
-            urlObj.protocol === 'https:' &&
-            !urlObj.hostname.includes('google.') &&
-            !urlObj.hostname.includes('gstatic.com') &&
-            !href.includes('/search?') &&
-            !href.includes('accounts.google.com')
-          ) {
-            foundUrls.push(href);
-          }
-        } catch (_) {}
+        if (href && href.startsWith('http') && !href.includes('google.')) {
+          foundUrls.push(href);
+        }
       });
-
       return [...new Set(foundUrls)];
     });
 
-    console.log(`✅ [Google Only] Extracted ${links.length} results.`);
+    console.log(`✅ [Google Search] Found ${links.length} results.`);
     return links;
 
   } catch (error) {
-    console.error(`❌ [Google Only Error]:`, error.message);
+    console.error(`⚠️ [Google Search Timeout/Error]:`, error.message);
     return [];
   } finally {
     await page.close();
